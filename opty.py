@@ -47,6 +47,8 @@ def getBasicInput():
         putOrCall = input("Please select ONLY PUT or CALL or nothing: ")
     if putOrCall == '': putOrCall = 'ALL'
     return [ticker, putOrCall]
+
+    
 args = getBasicInput()
 q = get_opts(args[0], c_type=args[1])
 df = parse(q)
