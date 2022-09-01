@@ -21,7 +21,7 @@ except FileNotFoundError:
     print('ERROR: Authentication failed.')
     
 # Get options chain, return JSON object
-def get_opts(ticker, c_type='ALL', s_count=None, f_date=None, t_date=None):
+def getOpts(ticker, c_type='ALL', s_count=None, f_date=None, t_date=None):
     c.set_enforce_enums(False)
     #options = c.get_option_chain('AAPL',contract_type="CALL",strike_count=10,from_date=datetime.date(2022,9,1),to_date=datetime.date(2022,9,3))
     options = c.get_option_chain(ticker, contract_type=c_type)
@@ -44,7 +44,7 @@ def parse(query):
     return df, contract
 
 # Get ticker and Put/Call input from user
-def getInput():
+def getTickerInput():
     ticker = input("Enter a valid ticker: ")
     putOrCall = input("Specify 'PUT', 'CALL' or leave blank for both: ")
     while putOrCall not in ['', 'PUT', 'CALL']:
@@ -53,7 +53,7 @@ def getInput():
     return [ticker, putOrCall]
 
 # Get expiration date input from user
-def getInputExpiry(df, contract):
+def getExpiryInput(df, contract):
     exp_frame = pd.DataFrame(contract.keys(),columns=["Expiration Date"])
     print(exp_frame)
     rows = exp_frame.size
@@ -70,9 +70,15 @@ def getInputExpiry(df, contract):
     pd.set_option('display.max_rows', None)
     date_df = df.loc[df['expirationDate'] == date_unix]
     date_df.reset_index(inplace=True) #Resets row indexes
+
+    #Convert Unix timestamps to Datetime Dates
+    for i in date_df.index:
+        date = datetime.datetime.fromtimestamp((date_df.loc[i,'expirationDate'])/1000.0).date()
+        date_df.loc[i,'expirationDate'] = date
+
     print(date_df[['strikePrice','putCall','symbol','expirationDate','bid','ask','last','volatility']])
 
-args = getInput()
-q = get_opts(args[0], c_type=args[1])
+args = getTickerInput()
+q = getOpts(args[0], c_type=args[1])
 df, contract = parse(q)
-getInputExpiry(df, contract)
+getExpiryInput(df, contract)
