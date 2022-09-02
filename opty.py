@@ -53,12 +53,31 @@ def parse(query):
 
 # Get ticker and Put/Call input from user and return args for tda-api client request
 def getTickerInput():
-    ticker = input("Enter a valid ticker: ")
-    putOrCall = input("Specify 'PUT', 'CALL' or leave blank for both: ")
-    while putOrCall not in ['', 'PUT', 'CALL']:
-        putOrCall = input("Please specify 'PUT', 'CALL' or leave blank for both: ")
-    if putOrCall == '': putOrCall = 'ALL'
-    return [ticker, putOrCall]
+
+    tickerQuestion = [
+    inquirer.Text('ticker',
+                message="Enter a valid ticker",
+                ),
+    inquirer.List('putCall',
+                  message="Select an order type",
+                  choices=["Put","Call","Put & Call"]
+                ),
+    ]
+
+    tickerAnswers = inquirer.prompt(tickerQuestion)
+
+    ticker = tickerAnswers['ticker']
+    putCall = tickerAnswers['putCall']
+
+    match putCall:
+        case "Put":
+            putCall = "PUT"
+        case "Call":
+            putCall = "CALL"
+        case "Put & Call":
+            putCall = "ALL"
+        
+    return [ticker, putCall]
 
 # Get expiration date input from user and return Unix date
 def getExpiryInput(df, contract):
@@ -125,7 +144,7 @@ def getOrderInput(df, strikeAnswer):
     print(''.center(90, '='))
     print()
 
-    def qty_validation(answers, current):
+    def qty_validation(orderAnswers, current):
         if int(current) < 1:
             raise inquirer.errors.ValidationError("", reason="Invalid order quantity.")
 
