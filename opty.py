@@ -1,3 +1,4 @@
+from multiprocessing.sharedctypes import Value
 from tda import auth, client
 import tda
 import json
@@ -6,6 +7,8 @@ import pandas as pd
 import httpx
 import datetime
 import pprint
+import re
+import inquirer
 
 
 # TDA Ameritrade Token Authentication
@@ -27,6 +30,10 @@ def getOpts(ticker, c_type='ALL', s_count=None, f_date=None, t_date=None):
     options = c.get_option_chain(ticker, contract_type=c_type)
     assert options.status_code == httpx.codes.OK, options.raise_for_status()
     query = options.json()
+
+    if query['status'] ==  'FAILED':
+        raise ValueError("Query failed. Invalid ticker possible.")
+
     return query
 
 # Parse options chain, return pandas dataFrame
@@ -43,42 +50,83 @@ def parse(query):
     df = pd.DataFrame(opt_chain)
     return df, contract
 
-# Get ticker and Put/Call input from user
+# Get ticker and Put/Call input from user and return args for tda-api client request
 def getTickerInput():
     ticker = input("Enter a valid ticker: ")
     putOrCall = input("Specify 'PUT', 'CALL' or leave blank for both: ")
     while putOrCall not in ['', 'PUT', 'CALL']:
-        putOrCall = input("Please select ONLY PUT or CALL or nothing: ")
+        putOrCall = input("Please specify 'PUT', 'CALL' or leave blank for both: ")
     if putOrCall == '': putOrCall = 'ALL'
     return [ticker, putOrCall]
 
-# Get expiration date input from user
+# Get expiration date input from user and return Unix date
 def getExpiryInput(df, contract):
-    exp_frame = pd.DataFrame(contract.keys(),columns=["Expiration Date"])
-    print(exp_frame)
-    rows = exp_frame.size
-    exp_i = int(input("Select an expiration date from list above (left column digit): "))
-    while exp_i < 0 or exp_i > (rows - 1):
-            exp_i = input("Select an expiration date from list above (left column digit): ")
+
+    expiryQuestion = [
+    inquirer.List('date',
+                  message="Please select an expiration date (yyyy-mm-dd:DTE)",
+                  choices=list(contract.keys()),
+              ),
+    ]
+
+    expiryAnswer = inquirer.prompt(expiryQuestion)
 
     #Find chosen date:
-    date_str = list(contract.keys())[exp_i] #Select date from contract keys in str format
-    strike = list(contract[date_str].values())[0] #Choose dummy strike from list of strikes for selected date
+    strike = list(contract[expiryAnswer['date']].values())[0] #Choose dummy strike from list of strikes for selected date
     date_unix = strike[0]['expirationDate'] #Open list and return expirationDate in Unix format 
+
+    return date_unix
+
+#Get strike selection input from user
+def getStrikeInput(df,date_unix):
 
     #Print all strikes for chosen date:
     pd.set_option('display.max_rows', None)
     date_df = df.loc[df['expirationDate'] == date_unix]
     date_df.reset_index(inplace=True) #Resets row indexes
 
-    #Convert Unix timestamps to Datetime Dates
+    #Convert display of Unix timestamps to Datetime Dates for readability
     for i in date_df.index:
         date = datetime.datetime.fromtimestamp((date_df.loc[i,'expirationDate'])/1000.0).date()
         date_df.loc[i,'expirationDate'] = date
 
-    print(date_df[['strikePrice','putCall','symbol','expirationDate','bid','ask','last','volatility']])
+    date_df = date_df[['strikePrice','putCall','symbol','expirationDate','bid','ask','last','volatility']]
+    print(date_df)
 
-args = getTickerInput()
-q = getOpts(args[0], c_type=args[1])
+    strike_list = date_df['strikePrice'].values.tolist()
+
+    def strike_validation(strikeAnswer, current):
+        if not float(current) in strike_list:
+            raise inquirer.errors.ValidationError("", reason="Invalid strike")
+
+        return True
+
+    strikeQuestion = [
+        inquirer.Text(
+            "strike",
+            message="Enter a valid strike from the list above",
+            validate=strike_validation,
+        ),
+    ]
+
+    strikeAnswer = inquirer.prompt(strikeQuestion)
+    print(strikeAnswer)
+
+# Loop until valid ticker is received
+while True:
+    args = getTickerInput()
+    try:
+        q = getOpts(args[0], c_type=args[1])
+        break
+    except ValueError:
+        print("Query failed. Invalid ticker likely.")
+        pass
+    
+# Parse JSON query and return pandas df and dateMap dictionary
 df, contract = parse(q)
-getExpiryInput(df, contract)
+
+# Get expiry input from user
+exp_unix = getExpiryInput(df, contract)
+
+#Get strike selection input from user
+getStrikeInput(df, exp_unix)
