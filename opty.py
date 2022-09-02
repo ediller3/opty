@@ -1,4 +1,5 @@
 from multiprocessing.sharedctypes import Value
+from wsgiref import validate
 from tda import auth, client
 import tda
 import json
@@ -113,10 +114,38 @@ def getStrikeInput(df,date_unix):
     return date_df, strikeAnswer
 
 #Take in input on purchase order and return pandas df row for selected options contract
-def getOrderInput(df, strikeAnswer, qty):
+def getOrderInput(df, strikeAnswer):
     df_row = df.loc[df['strikePrice'] == float(strikeAnswer['strike'])]
+    #df_row = df_row.set_index('strikePrice')
+    print()
+    print(' Selected Contract '.center(90, '='))
+    print()
     print(df_row)
-    return df_row
+    print()
+    print(''.center(90, '='))
+    print()
+
+    def qty_validation(answers, current):
+        if int(current) < 1:
+            raise inquirer.errors.ValidationError("", reason="Invalid order quantity.")
+
+        return True
+    
+    orderQuestion = [
+    inquirer.List('order',
+                  message="Select an order type",
+                  choices=["Buy","Sell"]
+              ),
+    inquirer.Text(
+        "qty",
+        message="Enter the quantity",
+        validate=qty_validation
+    ),
+    ]
+
+    orderAnswers = inquirer.prompt(orderQuestion)
+
+    return df_row, orderAnswers['order'], orderAnswers['qty']
 
 
 # Loop until valid ticker is received
@@ -139,5 +168,5 @@ exp_unix = getExpiryInput(df, contract)
 order_df, strikeAnswer = getStrikeInput(df, exp_unix)
 
 #Get order input from user
-getOrderInput(order_df, strikeAnswer, 0)
+df_row, orderType, qty = getOrderInput(order_df, strikeAnswer)
 
