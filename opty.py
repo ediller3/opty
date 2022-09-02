@@ -110,7 +110,14 @@ def getStrikeInput(df,date_unix):
     ]
 
     strikeAnswer = inquirer.prompt(strikeQuestion)
-    print(strikeAnswer)
+    return date_df, strikeAnswer
+
+#Take in input on purchase order and return pandas df row for selected options contract
+def getOrderInput(df, strikeAnswer, qty):
+    df_row = df.loc[df['strikePrice'] == float(strikeAnswer['strike'])]
+    print(df_row)
+    return df_row
+
 
 # Loop until valid ticker is received
 while True:
@@ -129,4 +136,8 @@ df, contract = parse(q)
 exp_unix = getExpiryInput(df, contract)
 
 #Get strike selection input from user
-getStrikeInput(df, exp_unix)
+order_df, strikeAnswer = getStrikeInput(df, exp_unix)
+
+#Get order input from user
+getOrderInput(order_df, strikeAnswer, 0)
+
