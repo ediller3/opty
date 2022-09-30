@@ -14,8 +14,16 @@ import inquirer
 from option import Option
 from opty import *
 from profile import Profile
+import pickle
 
-profile = Profile(5000)
+try:
+    print("Profile loaded.")
+    infile = open('profile','rb')
+    profile = pickle.load(infile)
+    infile.close()
+except:
+    print("No profile found. Creating new profile.")
+    profile = Profile(5000)
 
 def optionsChain():
     # Loop until valid ticker is received
@@ -71,6 +79,9 @@ def main():
         try:
             mainMenu()
         except Exception as e:
+            outfile = open('profile', 'wb')
+            pickle.dump(profile,outfile)
+            outfile.close()
             print(e)
             break
 
