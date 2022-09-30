@@ -1,4 +1,5 @@
 from multiprocessing.sharedctypes import Value
+from sre_constants import CALL
 from wsgiref import validate
 from tda import auth, client
 import tda
@@ -11,24 +12,26 @@ import pprint
 import re
 import inquirer
 
-
 # TDA Ameritrade Token Authentication
-try:
-    #Authenticate using token if token exists
-    c = auth.client_from_token_file(config.token_path, config.api_key)
-except FileNotFoundError:
-    #Use Chromium webdriver to authenticate with TDA login
-    from selenium import webdriver
-    with webdriver.Chrome(executable_path="/Users/edwarddiller/Python/Opty/chromedriver") as driver:
-        c = auth.client_from_login_flow(
-            driver, config.api_key, config.redirect_uri, config.token_path)
-    print('ERROR: Authentication failed.')
+def tdaAuth():
+    try:
+        #Authenticate using token if token exists
+        c = auth.client_from_token_file(config.token_path, config.api_key)
+    except FileNotFoundError:
+        #Use Chromium webdriver to authenticate with TDA login
+        from selenium import webdriver
+        with webdriver.Chrome(executable_path="/Users/edwarddiller/Python/Opty/chromedriver") as driver:
+            c = auth.client_from_login_flow(driver, config.api_key, config.redirect_uri, config.token_path)
+        print('ERROR: Authentication failed.')
+
+    return c
     
 # Get options chain, return JSON object
-def getOpts(ticker, c_type='ALL', s_count=None, f_date=None, t_date=None):
+def getOpts(ticker, s_count=None, f_date=None, t_date=None):
+    c = tdaAuth()
     c.set_enforce_enums(False)
-    #options = c.get_option_chain('AAPL',contract_type="CALL",strike_count=10,from_date=datetime.date(2022,9,1),to_date=datetime.date(2022,9,3))
-    options = c.get_option_chain(ticker, contract_type=c_type)
+    #options = c.get_option_chain('AAPL',contract_type='PUT',strike_count=10,from_date=datetime.date(2022,9,1),to_date=datetime.date(2022,10,20))
+    options = c.get_option_chain(ticker, contract_type='ALL')
     assert options.status_code == httpx.codes.OK, options.raise_for_status()
     query = options.json()
 
@@ -37,10 +40,40 @@ def getOpts(ticker, c_type='ALL', s_count=None, f_date=None, t_date=None):
 
     return query
 
+#Pulls new data from TDA-API and returns dictionary with latest data for given option object
+def getSpecificOpt(c, option):
+    c = tdaAuth()
+    c.set_enforce_enums(False)
+    ticker = option.symbol.split('_')[0]
+    options = c.get_option_chain(ticker, contract_type=option.putCall, strike=option.strike, from_date=option.dateExp, to_date=option.dateExp)
+    assert options.status_code == httpx.codes.OK, options.raise_for_status()
+    query = options.json()
+    
+    dict = {}
+    if option.putCall == "CALL":
+        dict = query['callExpDateMap']
+    elif option.putCall == "PUT":
+        dict = query['putExpDateMap']
+
+    #Goes through dictionary to get to sub dictionary for our target contract
+    contract = list(list(dict.values())[0].values())[0][0]
+
+    return contract
+
 # Parse options chain, return pandas dataFrame
-def parse(query):
+def parse(query, putCall):
     opt_chain = []
-    for contr_type in ['callExpDateMap', 'putExpDateMap']:
+
+    map = []
+    match putCall:
+        case 'CALL':
+            map = ['callExpDateMap']
+        case 'PUT':
+            map = ['putExpDateMap']
+        case 'ALL':
+            map = ['callExpDateMap', 'putExpDateMap']
+
+    for contr_type in map:
         contract = dict(query)[contr_type]
         expirations = contract.keys()
         for expiry in list(expirations):
@@ -48,6 +81,7 @@ def parse(query):
             for st in list(strikes):
                 entry = contract[expiry][st][0]
                 opt_chain.append(entry)
+
     df = pd.DataFrame(opt_chain)
     return df, contract
 
@@ -81,15 +115,19 @@ def getTickerInput():
 
 # Get expiration date input from user and return Unix date
 def getExpiryInput(df, contract):
+    expiryList = list(contract.keys())
+    expiryList.insert(0, "Back")
 
     expiryQuestion = [
     inquirer.List('date',
                   message="Please select an expiration date (yyyy-mm-dd:DTE)",
-                  choices=list(contract.keys()),
+                  choices=expiryList,
               ),
     ]
 
     expiryAnswer = inquirer.prompt(expiryQuestion)
+    if expiryAnswer['date'] == "Back":
+        raise Exception
 
     #Find chosen date:
     strike = list(contract[expiryAnswer['date']].values())[0] #Choose dummy strike from list of strikes for selected date
@@ -164,28 +202,5 @@ def getOrderInput(df, strikeAnswer):
 
     orderAnswers = inquirer.prompt(orderQuestion)
 
-    return df_row, orderAnswers['order'], orderAnswers['qty']
-
-
-# Loop until valid ticker is received
-while True:
-    args = getTickerInput()
-    try:
-        q = getOpts(args[0], c_type=args[1])
-        break
-    except ValueError:
-        print("Query failed. Invalid ticker likely.")
-        pass
+    return df_row, orderAnswers['order'], int(orderAnswers['qty'])
     
-# Parse JSON query and return pandas df and dateMap dictionary
-df, contract = parse(q)
-
-# Get expiry input from user
-exp_unix = getExpiryInput(df, contract)
-
-#Get strike selection input from user
-order_df, strikeAnswer = getStrikeInput(df, exp_unix)
-
-#Get order input from user
-df_row, orderType, qty = getOrderInput(order_df, strikeAnswer)
-

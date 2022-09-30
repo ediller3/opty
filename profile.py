@@ -1,23 +1,48 @@
+import pandas as pd
+
 class Profile:
   def __init__(self, balance=0):
-    # assets is a symbol to list of Option objects dictionary
+    # Assets is a dictionary of held contacts (key = symbol, value = option object)
     self.assets = {}
-    # # balance represents the money associated to a given profile
-    # self.balance = balance
+
+    # balance represents the money associated to a given profile
+    self.balance = balance;
 
   def buyOption(self, option):
-    symbol = option.symbol
-    print(symbol)
-    if symbol in self.assets:
-      self.assets[symbol].append(option)
+    ### NEED TO PRINT ORDER CONFIRMATION ###
+    if option.costBasis * 100 < self.balance:
+      self.assets[option.symbol] = option
+      self.balance -= option.costBasis * option.quantity * 100
     else:
-      self.assets[symbol] = [option]
+      raise Exception("Insufficient funds.")
 
   def sellOption(self, option):
     pass
 
+  def refreshAssets(self):
+    #pulls latest bid, ask, volatility for all contracts in portfolio
+    for _, option in self.assets.items():
+      option.refresh()
+
   def viewPortfolio(self):
-    for _, options in self.assets.items():
-      for o in options:
-        o.getOption()
+    self.refreshAssets()
+    print()
+    print(' Portfolio '.center(90, '='))
+    print()
+    print("Current Balance: $" + "{:.2f}".format(self.balance))
+    print()
+    print(''.center(90, '-'))
+    print("Assets:")
+    print()
+
+    if len(self.assets) > 0:
+      frames = []
+      for _, option in self.assets.items():
+          frames.append(option.row)
+      result = pd.concat(frames)
+      print(result)
+      
+    print(''.center(90, '='))
+    print()
+
 
