@@ -24,6 +24,7 @@ class Profile:
     for _, option in self.assets.items():
       option.refresh()
 
+  # Prints all assets to console 
   def viewPortfolio(self):
     self.refreshAssets()
     print()
